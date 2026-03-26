@@ -1,0 +1,58 @@
+<svg width="1200" height="900" viewBox="0 0 1200 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="900" fill="#1A0F0A"/>
+  <rect width="1200" height="900" fill="url(#bg)"/>
+  <circle cx="992" cy="140" r="240" fill="url(#glow)" opacity="0.55"/>
+  <circle cx="108" cy="770" r="250" fill="#F97316" opacity="0.24"/>
+  <circle cx="914" cy="634" r="166" fill="#FB923C" opacity="0.16"/>
+  <g opacity="0.95">
+    <circle cx="296" cy="356" r="176" fill="#FDBA74"/>
+    <circle cx="296" cy="356" r="160" fill="#FB923C"/>
+    <path d="M296 208C349.019 208 396.551 231.156 428.715 267.915C386.606 300.051 333.991 319.091 277.039 319.091C226.818 319.091 179.969 304.29 140.691 278.804C170.519 236.136 229.302 208 296 208Z" fill="#FDE68A" opacity="0.45"/>
+    <circle cx="296" cy="356" r="118" fill="none" stroke="#FFF7ED" stroke-width="10" opacity="0.65"/>
+    <path d="M296 238V474" stroke="#FFF7ED" stroke-width="10" opacity="0.52"/>
+    <path d="M178 356H414" stroke="#FFF7ED" stroke-width="10" opacity="0.52"/>
+    <path d="M212.5 272.5L379.5 439.5" stroke="#FFF7ED" stroke-width="10" opacity="0.52"/>
+    <path d="M379.5 272.5L212.5 439.5" stroke="#FFF7ED" stroke-width="10" opacity="0.52"/>
+  </g>
+  <g filter="url(#shadow)">
+    <path d="M708 175H860L838 751C835.868 806.837 790.015 851 734.14 851H733.86C677.985 851 632.132 806.837 630 751L608 175H708Z" fill="url(#glass)"/>
+    <path d="M655 229H813L797 724C795.364 774.214 754.188 814 703.95 814H703.05C652.812 814 611.636 774.214 610 724L594 229H655Z" fill="url(#juice)"/>
+    <path d="M646 229H822" stroke="#FFF7ED" stroke-width="8" stroke-linecap="round" opacity="0.85"/>
+    <path d="M694 118H771" stroke="#FFF7ED" stroke-width="18" stroke-linecap="round"/>
+    <path d="M744 118V184" stroke="#FFF7ED" stroke-width="18" stroke-linecap="round"/>
+    <path d="M663 353C697.333 329.667 731.667 329.667 766 353C800.333 376.333 834.667 376.333 869 353" stroke="#FFF7ED" stroke-width="8" stroke-linecap="round" opacity="0.46"/>
+    <path d="M651 468C691 440.667 731 440.667 771 468C811 495.333 851 495.333 891 468" stroke="#FFF7ED" stroke-width="8" stroke-linecap="round" opacity="0.3"/>
+    <rect x="676" y="272" width="26" height="452" rx="13" fill="#FFF7ED" opacity="0.16"/>
+  </g>
+  <defs>
+    <linearGradient id="bg" x1="171" y1="102" x2="1002" y2="861" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3B1D0F"/>
+      <stop offset="0.52" stop-color="#20100A"/>
+      <stop offset="1" stop-color="#120A07"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(992 140) rotate(90) scale(240)">
+      <stop stop-color="#FDE68A"/>
+      <stop offset="1" stop-color="#FDE68A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass" x1="734" y1="175" x2="734" y2="851" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF7ED" stop-opacity="0.48"/>
+      <stop offset="0.48" stop-color="#FFF7ED" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#FFF7ED" stop-opacity="0.26"/>
+    </linearGradient>
+    <linearGradient id="juice" x1="706" y1="229" x2="706" y2="814" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FDBA74"/>
+      <stop offset="0.5" stop-color="#FB923C"/>
+      <stop offset="1" stop-color="#F97316"/>
+    </linearGradient>
+    <filter id="shadow" x="560" y="86" width="348" height="833" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="24"/>
+      <feGaussianBlur stdDeviation="24"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.051 0 0 0 0 0.024 0 0 0 0 0.012 0 0 0 0.55 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_1" result="shape"/>
+    </filter>
+  </defs>
+</svg>

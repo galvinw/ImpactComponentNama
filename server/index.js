@@ -1,10 +1,10 @@
 import express from 'express';
 import cors from 'cors';
-import { saveAnalysis, getAnalyses, saveTimestamp, getTimestamps, saveModelPath, getModels } from './storage.js';
+import { saveAnalysis, getAnalyses, saveTimestamp, getTimestamps } from './storage.js';
 import { initPeriodicCapture, getLastCaptures, hasCaptureAttempts } from './rtspCapture.js';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3030;
 
 app.use(cors());
 app.use(express.json());
@@ -57,7 +57,7 @@ app.post('/api/record-timestamp', async (req, res) => {
 
     if (![0, 1, 2, 3].includes(id)) {
       return res.status(400).json({
-        error: 'Invalid id. Must be 0 (image capture), 1 (Gaussian Splatting), 2 (Image Processed), or 3 (Total Time)'
+        error: 'Invalid id. Must be 0 (image capture), 1 (capture analysis complete), 2 (recommendation update), or 3 (total time)'
       });
     }
 
@@ -83,48 +83,6 @@ app.get('/api/timestamps', async (req, res) => {
   }
 });
 
-app.post('/api/refresh-model', async (req, res) => {
-  try {
-    const { folder_name } = req.body;
-
-    if (!folder_name) {
-      return res.status(400).json({
-        error: 'Missing required field: folder_name'
-      });
-    }
-
-    const supportedExtensions = ['.ply', '.gltf', '.glb'];
-    const modelUrl = `/${folder_name}/output.ply`;
-
-    const modelData = {
-      folder_name,
-      model_url: modelUrl,
-      extension: '.ply'
-    };
-
-    const result = await saveModelPath(modelData);
-
-    res.json({
-      success: true,
-      data: {
-        ...result,
-        message: 'Model URL prepared for refresh'
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/models', async (req, res) => {
-  try {
-    const models = await getModels();
-    res.json({ success: true, data: models });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 app.get('/api/camera-feeds', (req, res) => {
   try {
     const captures = getLastCaptures();
@@ -133,8 +91,7 @@ app.get('/api/camera-feeds', (req, res) => {
     res.json({
       success: true,
       data: {
-        camera1: captures.camera1,
-        camera2: captures.camera2,
+        camera: captures.camera,
         attempted
       }
     });

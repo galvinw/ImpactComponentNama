@@ -8,7 +8,6 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, 'data');
 const ANALYSIS_FILE = path.join(DATA_DIR, 'analysis.json');
 const TIMESTAMPS_FILE = path.join(DATA_DIR, 'timestamps.json');
-const MODELS_FILE = path.join(DATA_DIR, 'models.json');
 
 async function ensureDataDir() {
   try {
@@ -74,21 +73,4 @@ export async function saveTimestamp(timestampData) {
 
 export async function getTimestamps() {
   return await readJsonFile(TIMESTAMPS_FILE);
-}
-
-export async function saveModelPath(modelData) {
-  const models = await readJsonFile(MODELS_FILE);
-  const newModel = {
-    id: Date.now().toString(),
-    ...modelData,
-    created_at: new Date().toISOString()
-  };
-
-  models.push(newModel);
-  await writeJsonFile(MODELS_FILE, models);
-  return newModel;
-}
-
-export async function getModels() {
-  return await readJsonFile(MODELS_FILE);
 }

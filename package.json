@@ -14,15 +14,14 @@
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "@types/three": "^0.182.0",
+    "@vladmandic/human": "^3.3.6",
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "fluent-ffmpeg": "^2.1.3",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.13.0",
-    "three": "^0.182.0"
+    "react-router-dom": "^7.13.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",

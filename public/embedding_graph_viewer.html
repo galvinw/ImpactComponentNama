@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Embedding Graph Viewer</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #eef3f8;
+      color: #0f172a;
+    }
+
+    #app {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 270px;
+      height: 100vh;
+    }
+
+    #chart-wrap {
+      position: relative;
+      min-width: 0;
+      background:
+        radial-gradient(circle at top left, rgba(59, 130, 246, 0.1), transparent 34%),
+        linear-gradient(180deg, #ffffff 0%, #edf3f8 100%);
+      border-right: 1px solid rgba(148, 163, 184, 0.35);
+      overflow: hidden;
+    }
+
+    #chart {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    #sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 14px;
+      background: rgba(255, 255, 255, 0.75);
+      backdrop-filter: blur(10px);
+    }
+
+    .eyebrow {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #64748b;
+    }
+
+    h3 {
+      margin: 6px 0 0;
+      font-size: 22px;
+      line-height: 1.1;
+    }
+
+    #summary {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.45;
+      color: #475569;
+    }
+
+    #details {
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 2px;
+      background: rgba(248, 250, 252, 0.95);
+      padding: 12px;
+      min-height: 180px;
+    }
+
+    #details p {
+      margin: 0 0 8px;
+      font-size: 13px;
+      line-height: 1.4;
+      color: #334155;
+    }
+
+    #details p:last-child {
+      margin-bottom: 0;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px 10px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(148, 163, 184, 0.28);
+    }
+
+    .stat {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+      color: #475569;
+    }
+
+    .legend {
+      display: grid;
+      gap: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 2px;
+      background: rgba(248, 250, 252, 0.95);
+      padding: 12px;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #475569;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      flex: none;
+    }
+
+    .point {
+      stroke: rgba(255, 255, 255, 0.95);
+      stroke-width: 1.2px;
+      cursor: pointer;
+      transition: opacity 160ms ease;
+    }
+
+    .point.is-faded {
+      opacity: 0.28;
+    }
+
+    .point.selected {
+      stroke: #0f172a;
+      stroke-width: 2.2px;
+    }
+
+    .label {
+      fill: #0f172a;
+      font-size: 11px;
+      font-weight: 600;
+      pointer-events: none;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.9);
+    }
+
+    .empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 24px;
+      color: #64748b;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="chart-wrap">
+      <svg id="chart"></svg>
+      <div id="empty" class="empty">Waiting for embedding data.</div>
+    </div>
+    <aside id="sidebar">
+      <div>
+        <p class="eyebrow">Embedding Viewer</p>
+        <h3>Similarity Map</h3>
+      </div>
+      <p id="summary">Click a point to inspect its embedding values and recommendation metadata.</p>
+      <div id="details">No point selected.</div>
+      <div class="legend">
+        <div class="legend-row"><span class="dot" style="background:#0f172a"></span>Detected person</div>
+        <div class="legend-row"><span class="dot" style="background:#f59e0b"></span>Active recommendation</div>
+        <div class="legend-row"><span class="dot" style="background:#64748b"></span>Other kiosk products</div>
+      </div>
+    </aside>
+  </div>
+
+  <script type="module">
+    import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
+    import { UMAP } from "https://cdn.jsdelivr.net/npm/umap-js@1.4.0/+esm";
+
+    const svg = d3.select("#chart");
+    const chartWrap = document.getElementById("chart-wrap");
+    const details = document.getElementById("details");
+    const summary = document.getElementById("summary");
+    const empty = document.getElementById("empty");
+
+    let currentPayload = null;
+    let selectedId = null;
+
+    const fallbackPayload = {
+      activeId: "fallback-product",
+      points: [
+        {
+          id: "fallback-person",
+          label: "Visitor",
+          type: "person",
+          color: "#0f172a",
+          vector: [8, 5, 4, 2, 6, 7, 8, 9, 3, 7],
+          isActive: true,
+          isTopMatch: true,
+          stats: { Hydration: 8, Energy: 5, Sweetness: 4, Protein: 2, Comfort: 6, Focus: 7, Urgency: 8, "Cold Bias": 9, Indulgence: 3, Wellness: 7 }
+        },
+        {
+          id: "fallback-product",
+          label: "Water",
+          type: "product",
+          color: "#f59e0b",
+          vector: [10, 1, 1, 1, 5, 4, 9, 10, 2, 10],
+          score: 0.96,
+          distance: 0.04,
+          price: 10,
+          isActive: true,
+          isTopMatch: true,
+          stats: { Hydration: 10, Energy: 1, Sweetness: 1, Protein: 1, Comfort: 5, Focus: 4, Urgency: 9, "Cold Bias": 10, Indulgence: 2, Wellness: 10 }
+        },
+        {
+          id: "fallback-product-2",
+          label: "Coffee",
+          type: "product",
+          color: "#64748b",
+          vector: [3, 9, 2, 1, 4, 10, 8, 8, 4, 3],
+          score: 0.51,
+          distance: 0.49,
+          price: 21,
+          isActive: false,
+          isTopMatch: false,
+          stats: { Hydration: 3, Energy: 9, Sweetness: 2, Protein: 1, Comfort: 4, Focus: 10, Urgency: 8, "Cold Bias": 8, Indulgence: 4, Wellness: 3 }
+        }
+      ]
+    };
+
+    function getDetailsMarkup(point) {
+      const rows = [
+        `<p><strong>Label:</strong> ${point.label}</p>`,
+        `<p><strong>Type:</strong> ${point.type}</p>`
+      ];
+
+      if (typeof point.price === "number") {
+        rows.push(`<p><strong>Price:</strong> $${point.price.toFixed(0)}</p>`);
+      }
+
+      if (typeof point.score === "number") {
+        rows.push(`<p><strong>Match score:</strong> ${point.score.toFixed(3)}</p>`);
+      }
+
+      if (typeof point.distance === "number") {
+        rows.push(`<p><strong>Distance:</strong> ${point.distance.toFixed(3)}</p>`);
+      }
+
+      if (point.isActive) {
+        rows.push(`<p><strong>Status:</strong> Active recommendation</p>`);
+      } else if (point.isTopMatch) {
+        rows.push(`<p><strong>Status:</strong> Top 5 comparison</p>`);
+      }
+
+      const stats = Object.entries(point.stats || {})
+        .map(([key, value]) => `<div class="stat"><span>${key}</span><strong>${Number(value).toFixed(1)}</strong></div>`)
+        .join("");
+
+      rows.push(`<div class="stats">${stats}</div>`);
+      return rows.join("");
+    }
+
+    function render(payload) {
+      currentPayload = payload;
+      const points = Array.isArray(payload?.points) ? payload.points : [];
+
+      if (points.length < 2) {
+        empty.style.display = "grid";
+        svg.selectAll("*").remove();
+        details.textContent = "Need at least two points.";
+        return;
+      }
+
+      empty.style.display = "none";
+
+      const vectors = points.map((point) => point.vector);
+      const umap = new UMAP({
+        nComponents: 2,
+        nNeighbors: Math.min(6, points.length - 1),
+        minDist: 0.25
+      });
+      const embedding = umap.fit(vectors);
+      const embeddedPoints = points.map((point, index) => ({
+        ...point,
+        x: embedding[index][0],
+        y: embedding[index][1]
+      }));
+
+      if (!embeddedPoints.some((point) => point.id === selectedId)) {
+        selectedId = payload.activeId || embeddedPoints[0].id;
+      }
+
+      const width = chartWrap.clientWidth || 900;
+      const height = chartWrap.clientHeight || 420;
+      const pad = 36;
+
+      svg.attr("viewBox", `0 0 ${width} ${height}`);
+      svg.selectAll("*").remove();
+
+      const xExtent = d3.extent(embeddedPoints, (point) => point.x);
+      const yExtent = d3.extent(embeddedPoints, (point) => point.y);
+
+      const x = d3.scaleLinear().domain(xExtent).nice().range([pad, width - pad]);
+      const y = d3.scaleLinear().domain(yExtent).nice().range([height - pad, pad]);
+
+      const root = svg.append("g");
+      root.append("g")
+        .attr("transform", `translate(0, ${height - pad})`)
+        .call(d3.axisBottom(x).ticks(5).tickSizeOuter(0))
+        .call((axis) => axis.selectAll("path,line").attr("stroke", "rgba(148,163,184,0.45)"))
+        .call((axis) => axis.selectAll("text").attr("fill", "#64748b"));
+
+      root.append("g")
+        .attr("transform", `translate(${pad}, 0)`)
+        .call(d3.axisLeft(y).ticks(5).tickSizeOuter(0))
+        .call((axis) => axis.selectAll("path,line").attr("stroke", "rgba(148,163,184,0.45)"))
+        .call((axis) => axis.selectAll("text").attr("fill", "#64748b"));
+
+      const grid = root.append("g");
+
+      grid.selectAll("line.x")
+        .data(x.ticks(5))
+        .join("line")
+        .attr("x1", (tick) => x(tick))
+        .attr("x2", (tick) => x(tick))
+        .attr("y1", pad)
+        .attr("y2", height - pad)
+        .attr("stroke", "rgba(148,163,184,0.12)");
+
+      grid.selectAll("line.y")
+        .data(y.ticks(5))
+        .join("line")
+        .attr("x1", pad)
+        .attr("x2", width - pad)
+        .attr("y1", (tick) => y(tick))
+        .attr("y2", (tick) => y(tick))
+        .attr("stroke", "rgba(148,163,184,0.12)");
+
+      const plot = root.append("g");
+
+      const circles = plot.selectAll("circle")
+        .data(embeddedPoints, (point) => point.id)
+        .join("circle")
+        .attr("class", "point")
+        .attr("cx", (point) => x(point.x))
+        .attr("cy", (point) => y(point.y))
+        .attr("r", (point) => point.type === "person" ? 10 : point.isActive ? 9 : 7)
+        .attr("fill", (point) => point.isActive ? "#f59e0b" : point.type === "person" ? "#0f172a" : point.color || "#64748b")
+        .on("click", (event, point) => {
+          event.stopPropagation();
+          selectedId = point.id;
+          updateSelection();
+        });
+
+      const labels = plot.selectAll("text")
+        .data(embeddedPoints, (point) => point.id)
+        .join("text")
+        .attr("class", "label")
+        .attr("x", (point) => x(point.x) + 10)
+        .attr("y", (point) => y(point.y) - 8)
+        .style("display", (point) => point.id === selectedId || point.isActive || point.type === "person" ? "block" : "none")
+        .text((point) => point.label);
+
+      function updateSelection() {
+        circles
+          .classed("selected", (point) => point.id === selectedId)
+          .classed("is-faded", (point) => selectedId !== null && point.id !== selectedId);
+
+        labels.style("display", (point) =>
+          point.id === selectedId || point.isActive || point.type === "person" ? "block" : "none"
+        );
+
+        const selectedPoint = embeddedPoints.find((point) => point.id === selectedId);
+        if (!selectedPoint) {
+          details.textContent = "No point selected.";
+          summary.textContent = "Click a point to inspect its embedding values and recommendation metadata.";
+          return;
+        }
+
+        details.innerHTML = getDetailsMarkup(selectedPoint);
+        summary.textContent =
+          selectedPoint.type === "person"
+            ? "The detected person anchors the recommendation state for all kiosk products."
+            : `${selectedPoint.label} is plotted from the same 10-dimensional state vector used by the recommendation engine.`;
+      }
+
+      svg.on("click", () => {
+        selectedId = null;
+        updateSelection();
+      });
+
+      const zoom = d3.zoom()
+        .scaleExtent([0.7, 6])
+        .on("zoom", (event) => {
+          plot.attr("transform", event.transform);
+        });
+
+      svg.call(zoom);
+      updateSelection();
+    }
+
+    window.addEventListener("message", (event) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
+
+      if (event.data?.type === "embedding-data") {
+        render(event.data.payload);
+      }
+    });
+
+    window.addEventListener("resize", () => {
+      if (currentPayload) {
+        render(currentPayload);
+      }
+    });
+
+    render(fallbackPayload);
+  </script>
+</body>
+</html>

@@ -1,3 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    color: #0f172a;
+    background: #f4f7f6;
+    font-family: 'Space Grotesk', sans-serif;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    background: #f4f7f6;
+    color: #0f172a;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  ::selection {
+    background: rgba(255, 196, 45, 0.35);
+  }
+}
+
+@keyframes feed-scan {
+  0% {
+    transform: translateY(-120%);
+    opacity: 0;
+  }
+
+  20% {
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(900%);
+    opacity: 0;
+  }
+}
+
+@keyframes detector-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px rgba(232, 121, 249, 0.45), 0 0 24px rgba(232, 121, 249, 0.16);
+  }
+
+  50% {
+    box-shadow: 0 0 0 1px rgba(232, 121, 249, 0.75), 0 0 48px rgba(232, 121, 249, 0.3);
+  }
+}
+
+.feed-scan {
+  animation: feed-scan 4.5s linear infinite;
+}
+
+.detector-box {
+  animation: detector-pulse 2s ease-in-out infinite;
+}
+
+@keyframes typewriter-caret {
+  0%,
+  45% {
+    opacity: 1;
+  }
+
+  55%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.typewriter-caret {
+  animation: typewriter-caret 0.9s steps(1) infinite;
+}
