@@ -2,12 +2,22 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { MessageSquareText, ShoppingCart } from 'lucide-react';
 import AppShell from '../components/AppShell';
 import ProductCarousel from '../components/ProductCarousel';
-import { attributeKeys, detectedPerson, type AttributeKey, type Product, type StatRecord } from '../data/products';
+import {
+  attributeKeys,
+  type AttributeKey,
+  type Product,
+  type RetailPersonSession,
+  type StatRecord,
+} from '../data/products';
 
 interface ProductWorkspacePageProps {
   products: Product[];
   selectedProduct: Product;
+  activePersonSession: RetailPersonSession | null;
+  personSessionStatus: 'idle' | 'processing' | 'ready' | 'error';
   onSelectProduct: (productId: string) => void;
+  onBuyProduct: () => void;
+  onRecommendSomethingElse: () => void;
 }
 
 const reasonPhrases: Record<AttributeKey, string> = {
@@ -40,7 +50,9 @@ function pickTopReasonKeys(productStats: StatRecord, personStats: StatRecord) {
   return [...attributeKeys]
     .sort((left, right) => {
       const leftScore =
-        personStats[left] + productStats[left] * 0.8 - Math.abs(personStats[left] - productStats[left]) * 1.6;
+        personStats[left] +
+        productStats[left] * 0.8 -
+        Math.abs(personStats[left] - productStats[left]) * 1.6;
       const rightScore =
         personStats[right] +
         productStats[right] * 0.8 -
@@ -56,95 +68,105 @@ function pickBetterMatchKey(
   previousProductStats: StatRecord,
   personStats: StatRecord
 ) {
-  return [...attributeKeys]
-    .sort((left, right) => {
-      const leftImprovement =
-        Math.abs(previousProductStats[left] - personStats[left]) -
-        Math.abs(nextProductStats[left] - personStats[left]);
-      const rightImprovement =
-        Math.abs(previousProductStats[right] - personStats[right]) -
-        Math.abs(nextProductStats[right] - personStats[right]);
+  return [...attributeKeys].sort((left, right) => {
+    const leftImprovement =
+      Math.abs(previousProductStats[left] - personStats[left]) -
+      Math.abs(nextProductStats[left] - personStats[left]);
+    const rightImprovement =
+      Math.abs(previousProductStats[right] - personStats[right]) -
+      Math.abs(nextProductStats[right] - personStats[right]);
 
-      return rightImprovement - leftImprovement;
-    })[0];
+    return rightImprovement - leftImprovement;
+  })[0];
 }
 
-function buildVisitorRead(personStats: StatRecord) {
-  const lines: string[] = [];
-
-  if (personStats.urgency >= 7 || personStats.focus >= 7) {
-    lines.push('From the live read, this visitor looks ready for something quick, clear, and easy to commit to.');
+function buildWaitingNarrative(status: ProductWorkspacePageProps['personSessionStatus']) {
+  if (status === 'processing') {
+    return [
+      'Retail profile capture is in progress.',
+      'The analytics page has accepted a shopper image and is waiting for the server-side profile model.',
+      'Once the retail variables return, this page will update to the recommended drink automatically.',
+    ];
   }
 
-  if (personStats.temperature >= 8 || personStats.hydration >= 8) {
-    lines.push('The moment also points toward something cold, clean, and immediately refreshing.');
+  if (status === 'error') {
+    return [
+      'Retail profile capture is paused.',
+      'The analytics page could not complete the current shopper profile.',
+      'Hold the recommendation here until a new capture completes successfully.',
+    ];
   }
 
-  if (personStats.wellness >= 7 && personStats.indulgence <= 5) {
-    lines.push('A lighter direction looks more natural here than anything heavy or overly rich.');
-  } else if (personStats.energy >= 7) {
-    lines.push('There is enough pace in the read to support a drink with a bit more lift.');
-  }
-
-  return lines.slice(0, 2);
+  return [
+    'Waiting for a captured retail profile.',
+    'The kiosk will greet the next shopper after the analytics camera locks a clear, stable image.',
+    'A recommended drink and explanation will appear here automatically.',
+  ];
 }
 
-function buildInitialNarrative(product: Product, personStats: StatRecord) {
-  const visitorRead = buildVisitorRead(personStats);
-  const [primaryReasonKey, secondaryReasonKey] = pickTopReasonKeys(product.stats, personStats);
+function buildInitialNarrative(product: Product, session: RetailPersonSession) {
+  const [primaryReasonKey, secondaryReasonKey] = pickTopReasonKeys(product.stats, session.stats);
 
   return [
     'Hello there. Welcome in.',
-    visitorRead[0] ??
-      'The live camera read suggests a direct recommendation will work better than a broad menu first.',
+    session.summary,
     `${product.name} is leading because it ${reasonPhrases[primaryReasonKey]}.`,
     secondaryReasonKey
       ? `It also ${reasonPhrases[secondaryReasonKey]}, which makes it a strong first drink to surface.`
-      : `It feels like the cleanest first drink to put in front of this visitor.`,
+      : `It feels like the cleanest first drink to put in front of this shopper.`,
   ];
 }
 
 function buildAlternativeNarrative(
   product: Product,
   previousProduct: Product,
-  personStats: StatRecord
+  session: RetailPersonSession
 ) {
-  const betterMatchKey = pickBetterMatchKey(product.stats, previousProduct.stats, personStats);
-  const [primaryReasonKey, secondaryReasonKey] = pickTopReasonKeys(product.stats, personStats);
+  const betterMatchKey = pickBetterMatchKey(product.stats, previousProduct.stats, session.stats);
+  const [primaryReasonKey, secondaryReasonKey] = pickTopReasonKeys(product.stats, session.stats);
 
   return [
     `A switch to ${product.name} may be the better call.`,
     `Compared with ${previousProduct.name}, it ${betterMatchPhrases[betterMatchKey]}.`,
-    `${product.name} still ${reasonPhrases[primaryReasonKey]}, so the recommendation stays aligned with the visitor.`,
+    `${product.name} still ${reasonPhrases[primaryReasonKey]}, so the recommendation stays aligned with the shopper.`,
     secondaryReasonKey
       ? `It also ${reasonPhrases[secondaryReasonKey]}, which is a good reason to move it to the front.`
-      : 'If the visitor is changing course, this is a sensible drink to keep highlighted.',
+      : 'If the shopper is changing course, this is a sensible drink to keep highlighted.',
   ];
 }
 
 export default function ProductWorkspacePage({
   products,
   selectedProduct,
+  activePersonSession,
+  personSessionStatus,
   onSelectProduct,
+  onBuyProduct,
+  onRecommendSomethingElse,
 }: ProductWorkspacePageProps) {
   const [historyLines, setHistoryLines] = useState<string[]>([]);
   const [typedLines, setTypedLines] = useState<string[]>([]);
   const previousLinesRef = useRef<string[]>([]);
   const previousProductRef = useRef<Product | null>(null);
+  const previousSessionIdRef = useRef<string | null>(null);
 
-  const chatResponseLines = useMemo(
-    () =>
-      previousProductRef.current && previousProductRef.current.id !== selectedProduct.id
-        ? buildAlternativeNarrative(
-            selectedProduct,
-            previousProductRef.current,
-            detectedPerson.stats
-          )
-        : buildInitialNarrative(selectedProduct, detectedPerson.stats),
-    [selectedProduct]
-  );
+  const chatResponseLines = useMemo(() => {
+    if (!activePersonSession) {
+      return buildWaitingNarrative(personSessionStatus);
+    }
+
+    const isNewSession =
+      activePersonSession && previousSessionIdRef.current !== activePersonSession.id;
+
+    return !isNewSession &&
+      previousProductRef.current &&
+      previousProductRef.current.id !== selectedProduct.id
+      ? buildAlternativeNarrative(selectedProduct, previousProductRef.current, activePersonSession)
+      : buildInitialNarrative(selectedProduct, activePersonSession);
+  }, [activePersonSession, personSessionStatus, selectedProduct]);
 
   useEffect(() => {
+    previousSessionIdRef.current = activePersonSession?.id ?? null;
     previousProductRef.current = selectedProduct;
 
     if (previousLinesRef.current.length > 0) {
@@ -178,13 +200,7 @@ export default function ProductWorkspacePage({
     return () => {
       window.clearInterval(timer);
     };
-  }, [chatResponseLines, selectedProduct]);
-
-  const pickNextProduct = () => {
-    const currentIndex = products.findIndex((product) => product.id === selectedProduct.id);
-    const nextProduct = products[(currentIndex + 1) % products.length];
-    onSelectProduct(nextProduct.id);
-  };
+  }, [activePersonSession?.id, chatResponseLines, selectedProduct]);
 
   const visibleLines = [...historyLines, ...typedLines].slice(-6);
   const isTyping =
@@ -255,21 +271,24 @@ export default function ProductWorkspacePage({
                     ${selectedProduct.price.toFixed(0)}
                   </span>
                   <span className="rounded-md bg-white/18 px-3 py-1 text-sm font-semibold text-white/90">
-                    Ready To Recommend
+                    {activePersonSession ? 'Retail Profile Ready' : 'Waiting For Profile'}
                   </span>
                 </div>
                 <div className="mt-8 grid gap-3 sm:grid-cols-2">
                   <button
                     type="button"
-                    className="inline-flex items-center justify-center gap-2 rounded-md bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100"
+                    disabled={!activePersonSession}
+                    onClick={onBuyProduct}
+                    className="inline-flex items-center justify-center gap-2 rounded-md bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-white/50"
                   >
                     <ShoppingCart className="h-4 w-4" />
                     Buy Product
                   </button>
                   <button
                     type="button"
-                    onClick={pickNextProduct}
-                    className="rounded-md bg-white/16 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/22"
+                    disabled={!activePersonSession}
+                    onClick={onRecommendSomethingElse}
+                    className="rounded-md bg-white/16 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/22 disabled:cursor-not-allowed disabled:bg-white/8 disabled:text-white/55"
                   >
                     Recommend Something Else
                   </button>

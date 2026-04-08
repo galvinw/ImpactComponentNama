@@ -1,60 +1,17 @@
-export const attributeLabels = {
-  hydration: 'Hydration',
-  energy: 'Energy',
-  sweetness: 'Sweetness',
-  protein: 'Protein',
-  comfort: 'Comfort',
-  focus: 'Focus',
-  urgency: 'Urgency',
-  temperature: 'Cold Bias',
-  indulgence: 'Indulgence',
-  wellness: 'Wellness',
-} as const;
+export const attributeKeys = [
+  'hydration',
+  'energy',
+  'sweetness',
+  'protein',
+  'comfort',
+  'focus',
+  'urgency',
+  'temperature',
+  'indulgence',
+  'wellness',
+];
 
-export type AttributeKey = keyof typeof attributeLabels;
-export type StatRecord = Record<AttributeKey, number>;
-
-export interface Product {
-  id: string;
-  name: string;
-  tagline: string;
-  description: string;
-  price: number;
-  image: string;
-  accent: string;
-  background: string;
-  stats: StatRecord;
-  defaultStats: StatRecord;
-}
-
-export interface RetailPersonSession {
-  id: string;
-  label: string;
-  captureImage: string;
-  stats: StatRecord;
-  summary: string;
-  activeProductId: string;
-  topProductIds: string[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface StableCaptureCandidate {
-  personSessionId: string;
-  image: string;
-  captureMetadata: {
-    brightness: number;
-    sharpness: number;
-    faceCoverage: number;
-    centered: boolean;
-  };
-}
-
-export const attributeKeys = Object.keys(attributeLabels) as AttributeKey[];
-
-function createProduct(
-  product: Omit<Product, 'defaultStats'>
-): Product {
+function createProduct(product) {
   return {
     ...product,
     stats: { ...product.stats },
@@ -62,7 +19,7 @@ function createProduct(
   };
 }
 
-export const products: Product[] = [
+export const defaultProducts = [
   createProduct({
     id: 'bottled-water',
     name: 'Bottled Water',

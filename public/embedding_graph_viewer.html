@@ -22,7 +22,7 @@
 
     #app {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 270px;
+      grid-template-rows: minmax(0, 1fr) auto;
       height: 100vh;
     }
 
@@ -32,7 +32,7 @@
       background:
         radial-gradient(circle at top left, rgba(59, 130, 246, 0.1), transparent 34%),
         linear-gradient(180deg, #ffffff 0%, #edf3f8 100%);
-      border-right: 1px solid rgba(148, 163, 184, 0.35);
+      border-bottom: 1px solid rgba(148, 163, 184, 0.35);
       overflow: hidden;
     }
 
@@ -43,8 +43,8 @@
     }
 
     #sidebar {
-      display: flex;
-      flex-direction: column;
+      display: grid;
+      grid-template-columns: 1.25fr 1fr;
       gap: 12px;
       padding: 14px;
       background: rgba(255, 255, 255, 0.75);
@@ -179,13 +179,15 @@
       <div>
         <p class="eyebrow">Embedding Viewer</p>
         <h3>Similarity Map</h3>
+        <p id="summary">Click a point to inspect its embedding values and recommendation metadata.</p>
       </div>
-      <p id="summary">Click a point to inspect its embedding values and recommendation metadata.</p>
-      <div id="details">No point selected.</div>
-      <div class="legend">
-        <div class="legend-row"><span class="dot" style="background:#0f172a"></span>Detected person</div>
-        <div class="legend-row"><span class="dot" style="background:#f59e0b"></span>Active recommendation</div>
-        <div class="legend-row"><span class="dot" style="background:#64748b"></span>Other kiosk products</div>
+      <div>
+        <div id="details">No point selected.</div>
+        <div class="legend" style="margin-top:12px">
+          <div class="legend-row"><span class="dot" style="background:#0f172a"></span>Detected person</div>
+          <div class="legend-row"><span class="dot" style="background:#f59e0b"></span>Active recommendation</div>
+          <div class="legend-row"><span class="dot" style="background:#64748b"></span>Other kiosk products</div>
+        </div>
       </div>
     </aside>
   </div>

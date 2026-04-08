@@ -83,7 +83,7 @@ export function calculateDistance(left: StatRecord, right: StatRecord) {
 export function rankProducts(
   products: Product[],
   personStats: StatRecord,
-  productBias: Record<string, number>
+  productBias: Record<string, number> = {}
 ) {
   return products
     .map<RankedProduct>((product) => {

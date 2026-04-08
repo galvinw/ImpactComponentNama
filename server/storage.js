@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { defaultProducts } from './defaultProducts.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -8,6 +9,8 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, 'data');
 const ANALYSIS_FILE = path.join(DATA_DIR, 'analysis.json');
 const TIMESTAMPS_FILE = path.join(DATA_DIR, 'timestamps.json');
+const PRODUCTS_FILE = path.join(DATA_DIR, 'products.json');
+const PERSON_SESSION_FILE = path.join(DATA_DIR, 'person-session.json');
 
 async function ensureDataDir() {
   try {
@@ -29,6 +32,18 @@ async function readJsonFile(filePath, defaultValue = []) {
 async function writeJsonFile(filePath, data) {
   await ensureDataDir();
   await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeProducts(products) {
+  return products.map((product) => ({
+    ...product,
+    stats: { ...product.stats },
+    defaultStats: { ...(product.defaultStats ?? product.stats) },
+  }));
 }
 
 export async function saveAnalysis(analysisData) {
@@ -73,4 +88,43 @@ export async function saveTimestamp(timestampData) {
 
 export async function getTimestamps() {
   return await readJsonFile(TIMESTAMPS_FILE);
+}
+
+export async function getProducts() {
+  const storedProducts = await readJsonFile(PRODUCTS_FILE, null);
+
+  if (!Array.isArray(storedProducts) || storedProducts.length === 0) {
+    const initialProducts = normalizeProducts(cloneData(defaultProducts));
+    await writeJsonFile(PRODUCTS_FILE, initialProducts);
+    return initialProducts;
+  }
+
+  const normalizedProducts = normalizeProducts(storedProducts);
+  await writeJsonFile(PRODUCTS_FILE, normalizedProducts);
+  return normalizedProducts;
+}
+
+export async function saveProducts(products) {
+  const normalizedProducts = normalizeProducts(products);
+  await writeJsonFile(PRODUCTS_FILE, normalizedProducts);
+  return normalizedProducts;
+}
+
+export async function resetProducts() {
+  const initialProducts = normalizeProducts(cloneData(defaultProducts));
+  await writeJsonFile(PRODUCTS_FILE, initialProducts);
+  return initialProducts;
+}
+
+export async function getActivePersonSession() {
+  return await readJsonFile(PERSON_SESSION_FILE, null);
+}
+
+export async function saveActivePersonSession(session) {
+  await writeJsonFile(PERSON_SESSION_FILE, session);
+  return session;
+}
+
+export async function clearActivePersonSession() {
+  await writeJsonFile(PERSON_SESSION_FILE, null);
 }

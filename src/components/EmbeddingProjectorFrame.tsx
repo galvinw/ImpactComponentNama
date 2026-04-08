@@ -8,6 +8,7 @@ interface EmbeddingProjectorFrameProps {
   products: Product[];
   rankedProducts: RankedProduct[];
   activeProductId: string;
+  heightClassName?: string;
 }
 
 interface ViewerPoint {
@@ -84,6 +85,7 @@ export default function EmbeddingProjectorFrame({
   products,
   rankedProducts,
   activeProductId,
+  heightClassName = 'h-[420px]',
 }: EmbeddingProjectorFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -108,7 +110,7 @@ export default function EmbeddingProjectorFrame({
   }, [isLoaded, viewerPayload]);
 
   return (
-    <div className="h-[420px] overflow-hidden rounded-sm bg-slate-100">
+    <div className={`${heightClassName} overflow-hidden rounded-sm bg-slate-100`}>
       <iframe
         ref={iframeRef}
         src="/embedding_graph_viewer.html"

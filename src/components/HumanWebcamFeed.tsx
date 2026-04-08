@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Activity, Camera } from 'lucide-react';
 import type { Config, Result } from '@vladmandic/human';
+import type { StableCaptureCandidate } from '../data/products';
 
 export interface HumanWebcamMetrics {
   bodyConfidence: number | null;
@@ -8,12 +9,13 @@ export interface HumanWebcamMetrics {
   faceConfidence: number | null;
   faceCount: number;
   message: string;
-  status: 'idle' | 'loading' | 'live' | 'error';
+  status: 'idle' | 'loading' | 'live' | 'captured' | 'processing' | 'error';
 }
 
 interface HumanWebcamFeedProps {
-  onCaptureChange?: (image: string) => void;
-  onMetricsChange?: (metrics: HumanWebcamMetrics) => void;
+  analysisState: 'idle' | 'processing' | 'ready' | 'error';
+  analysisMessage: string;
+  onStableCapture?: (candidate: StableCaptureCandidate) => void;
 }
 
 const humanConfig: Partial<Config> = {
@@ -48,7 +50,8 @@ function buildMetrics(result: Result): HumanWebcamMetrics {
   if (faceCount > 0 && bodyCount > 0) {
     return {
       status: 'live',
-      message: `Live webcam connected. Tracking ${faceCount} face mesh${faceCount > 1 ? 'es' : ''} and ${bodyCount} body profile${bodyCount > 1 ? 's' : ''}.`,
+      message:
+        'Retail profile lock is building. Hold a clear, centered pose in frame to accept this shopper.',
       faceCount,
       bodyCount,
       faceConfidence,
@@ -59,7 +62,7 @@ function buildMetrics(result: Result): HumanWebcamMetrics {
   if (faceCount > 0) {
     return {
       status: 'live',
-      message: `Face mesh is live. Waiting for a stronger full-body read from the webcam.`,
+      message: 'Face mesh is live. Waiting for a stronger full-body read.',
       faceCount,
       bodyCount,
       faceConfidence,
@@ -70,7 +73,7 @@ function buildMetrics(result: Result): HumanWebcamMetrics {
   if (bodyCount > 0) {
     return {
       status: 'live',
-      message: `Body tracking is live. Waiting for a stronger facial mesh lock.`,
+      message: 'Body tracking is live. Waiting for a stronger facial mesh lock.',
       faceCount,
       bodyCount,
       faceConfidence,
@@ -80,7 +83,7 @@ function buildMetrics(result: Result): HumanWebcamMetrics {
 
   return {
     status: 'live',
-    message: 'Webcam is live. Waiting for a face or body to enter the frame.',
+    message: 'Webcam is live. Waiting for a shopper to enter the frame.',
     faceCount,
     bodyCount,
     faceConfidence,
@@ -88,12 +91,89 @@ function buildMetrics(result: Result): HumanWebcamMetrics {
   };
 }
 
+function analyzeImageQuality(
+  canvas: HTMLCanvasElement,
+  faceBox: [number, number, number, number]
+) {
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) {
+    return {
+      brightness: 0,
+      sharpness: 0,
+      faceCoverage: 0,
+      centered: false,
+      passes: false,
+    };
+  }
+
+  const { width, height } = canvas;
+  const imageData = context.getImageData(0, 0, width, height).data;
+  let luminanceTotal = 0;
+  let edgeTotal = 0;
+  const sampleStep = 4;
+  const rowStride = width * 4;
+
+  for (let y = 0; y < height; y += sampleStep) {
+    for (let x = 0; x < width; x += sampleStep) {
+      const index = y * rowStride + x * 4;
+      const red = imageData[index];
+      const green = imageData[index + 1];
+      const blue = imageData[index + 2];
+      const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722;
+      luminanceTotal += luminance;
+
+      if (x + sampleStep < width && y + sampleStep < height) {
+        const neighborIndex = index + sampleStep * 4;
+        const lowerIndex = index + sampleStep * rowStride;
+        const horizontal =
+          Math.abs(luminance - (imageData[neighborIndex] * 0.2126 +
+            imageData[neighborIndex + 1] * 0.7152 +
+            imageData[neighborIndex + 2] * 0.0722));
+        const vertical =
+          Math.abs(luminance - (imageData[lowerIndex] * 0.2126 +
+            imageData[lowerIndex + 1] * 0.7152 +
+            imageData[lowerIndex + 2] * 0.0722));
+        edgeTotal += horizontal + vertical;
+      }
+    }
+  }
+
+  const totalSamples = Math.max(1, Math.ceil(width / sampleStep) * Math.ceil(height / sampleStep));
+  const brightness = luminanceTotal / totalSamples;
+  const sharpness = edgeTotal / totalSamples;
+  const [x, y, boxWidth, boxHeight] = faceBox;
+  const faceCoverage = (boxWidth * boxHeight) / (width * height);
+  const faceCenterX = (x + boxWidth / 2) / width;
+  const faceCenterY = (y + boxHeight / 2) / height;
+  const centered =
+    faceCenterX >= 0.25 &&
+    faceCenterX <= 0.75 &&
+    faceCenterY >= 0.18 &&
+    faceCenterY <= 0.78;
+  const passes =
+    brightness >= 90 &&
+    sharpness >= 18 &&
+    faceCoverage >= 0.05 &&
+    boxWidth >= width * 0.18 &&
+    centered;
+
+  return {
+    brightness: Number(brightness.toFixed(2)),
+    sharpness: Number(sharpness.toFixed(2)),
+    faceCoverage: Number(faceCoverage.toFixed(4)),
+    centered,
+    passes,
+  };
+}
+
 export default function HumanWebcamFeed({
-  onCaptureChange,
-  onMetricsChange,
+  analysisState,
+  analysisMessage,
+  onStableCapture,
 }: HumanWebcamFeedProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const analysisCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const latestMetricsRef = useRef<HumanWebcamMetrics>({
     status: 'idle',
     message: 'Waiting for webcam initialization.',
@@ -102,18 +182,23 @@ export default function HumanWebcamFeed({
     faceConfidence: null,
     bodyConfidence: null,
   });
+  const lockStateRef = useRef({
+    stableSince: 0,
+    lastSeenAt: 0,
+    subjectLocked: false,
+    currentSessionId: '',
+  });
   const [metrics, setMetrics] = useState<HumanWebcamMetrics>(latestMetricsRef.current);
 
   useEffect(() => {
     let cancelled = false;
     let animationFrame = 0;
-    let lastCaptureAt = 0;
     let lastMetricsUpdateAt = 0;
     let humanInstance: InstanceType<typeof import('@vladmandic/human').default> | null = null;
 
     const updateMetrics = (nextMetrics: HumanWebcamMetrics, force: boolean = false) => {
       const now = window.performance.now();
-      if (!force && now - lastMetricsUpdateAt < 350) {
+      if (!force && now - lastMetricsUpdateAt < 250) {
         latestMetricsRef.current = nextMetrics;
         return;
       }
@@ -121,14 +206,33 @@ export default function HumanWebcamFeed({
       lastMetricsUpdateAt = now;
       latestMetricsRef.current = nextMetrics;
       setMetrics(nextMetrics);
-      onMetricsChange?.(nextMetrics);
+    };
+
+    const drawSourceFrame = (
+      source: CanvasImageSource,
+      target: HTMLCanvasElement,
+      width: number,
+      height: number
+    ) => {
+      const targetContext = target.getContext('2d');
+      if (!targetContext) {
+        return;
+      }
+
+      if (target.width !== width || target.height !== height) {
+        target.width = width;
+        target.height = height;
+      }
+
+      targetContext.drawImage(source, 0, 0, width, height);
     };
 
     const startDetection = async () => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
+      const analysisCanvas = analysisCanvasRef.current;
 
-      if (!video || !canvas) {
+      if (!video || !canvas || !analysisCanvas) {
         return;
       }
 
@@ -136,7 +240,7 @@ export default function HumanWebcamFeed({
         updateMetrics(
           {
             status: 'loading',
-            message: 'Loading Human models and requesting webcam access.',
+            message: 'Capturing retail profile from webcam.',
             faceCount: 0,
             bodyCount: 0,
             faceConfidence: null,
@@ -168,6 +272,8 @@ export default function HumanWebcamFeed({
 
         canvas.width = humanInstance.webcam.width || 1280;
         canvas.height = humanInstance.webcam.height || 960;
+        analysisCanvas.width = canvas.width;
+        analysisCanvas.height = canvas.height;
 
         const detectFrame = async () => {
           if (cancelled || !humanInstance) {
@@ -177,20 +283,80 @@ export default function HumanWebcamFeed({
           const result = await humanInstance.detect(video);
           const interpolated = humanInstance.next(result);
           const sourceCanvas = result.canvas ?? video;
+          const width = canvas.width;
+          const height = canvas.height;
 
+          drawSourceFrame(sourceCanvas as CanvasImageSource, analysisCanvas, width, height);
           humanInstance.draw.canvas(sourceCanvas, canvas);
           humanInstance.draw.face(canvas, interpolated.face);
           humanInstance.draw.body(canvas, interpolated.body);
 
           const nextMetrics = buildMetrics(interpolated);
-          updateMetrics(nextMetrics);
+          const lockState = lockStateRef.current;
+          const now = window.performance.now();
+          const faceBox = interpolated.face[0]?.box as [number, number, number, number] | undefined;
+          const hasPresence = Boolean(interpolated.face[0] && interpolated.body[0] && faceBox);
 
-          const hasTrackedSubject = nextMetrics.faceCount > 0 || nextMetrics.bodyCount > 0;
-          if (hasTrackedSubject && onCaptureChange) {
-            const now = window.performance.now();
-            if (now - lastCaptureAt > 1800) {
-              lastCaptureAt = now;
-              onCaptureChange(canvas.toDataURL('image/jpeg', 0.82));
+          if (hasPresence && faceBox) {
+            lockState.lastSeenAt = now;
+            const quality = analyzeImageQuality(analysisCanvas, faceBox);
+
+            if (!lockState.subjectLocked && quality.passes) {
+              if (lockState.stableSince === 0) {
+                lockState.stableSince = now;
+              }
+
+              if (now - lockState.stableSince >= 1500) {
+                lockState.subjectLocked = true;
+                lockState.currentSessionId = `person-${Date.now()}`;
+
+                onStableCapture?.({
+                  personSessionId: lockState.currentSessionId,
+                  image: analysisCanvas.toDataURL('image/jpeg', 0.9),
+                  captureMetadata: {
+                    brightness: quality.brightness,
+                    sharpness: quality.sharpness,
+                    faceCoverage: quality.faceCoverage,
+                    centered: quality.centered,
+                  },
+                });
+
+                updateMetrics(
+                  {
+                    ...nextMetrics,
+                    status: 'captured',
+                    message: 'Retail profile captured. Waiting for server analysis.',
+                  },
+                  true
+                );
+              } else {
+                updateMetrics(
+                  {
+                    ...nextMetrics,
+                    message:
+                      'Retail profile lock is stabilizing. Keep the shopper centered and well lit.',
+                  }
+                );
+              }
+            } else if (!quality.passes) {
+              lockState.stableSince = 0;
+              updateMetrics(
+                {
+                  ...nextMetrics,
+                  message:
+                    'Retail profile needs a brighter, sharper, centered face before capture.',
+                }
+              );
+            } else {
+              updateMetrics(nextMetrics);
+            }
+          } else {
+            lockState.stableSince = 0;
+            updateMetrics(nextMetrics);
+
+            if (lockState.subjectLocked && now - lockState.lastSeenAt >= 3000) {
+              lockState.subjectLocked = false;
+              lockState.currentSessionId = '';
             }
           }
 
@@ -201,18 +367,20 @@ export default function HumanWebcamFeed({
 
         await detectFrame();
       } catch (error) {
-        const nextMetrics: HumanWebcamMetrics = {
-          status: 'error',
-          message:
-            error instanceof Error
-              ? error.message
-              : 'Unable to start webcam detection.',
-          faceCount: 0,
-          bodyCount: 0,
-          faceConfidence: null,
-          bodyConfidence: null,
-        };
-        updateMetrics(nextMetrics, true);
+        updateMetrics(
+          {
+            status: 'error',
+            message:
+              error instanceof Error
+                ? error.message
+                : 'Unable to start webcam detection.',
+            faceCount: 0,
+            bodyCount: 0,
+            faceConfidence: null,
+            bodyConfidence: null,
+          },
+          true
+        );
       }
     };
 
@@ -223,22 +391,27 @@ export default function HumanWebcamFeed({
       window.cancelAnimationFrame(animationFrame);
       humanInstance?.webcam.stop();
     };
-  }, [onCaptureChange, onMetricsChange]);
+  }, [onStableCapture]);
 
   const faceConfidenceLabel =
     metrics.faceConfidence !== null ? metrics.faceConfidence.toFixed(2) : '--';
   const bodyConfidenceLabel =
     metrics.bodyConfidence !== null ? metrics.bodyConfidence.toFixed(2) : '--';
+  const displayMessage =
+    analysisState === 'processing' || analysisState === 'error'
+      ? analysisMessage
+      : metrics.message;
 
   return (
-    <div className="relative min-h-[980px] overflow-hidden rounded-lg bg-slate-950 shadow-[0_38px_90px_-50px_rgba(15,23,42,0.65)]">
+    <div className="relative h-[calc(100vh-24px)] overflow-hidden rounded-lg bg-slate-950 shadow-[0_38px_90px_-50px_rgba(15,23,42,0.65)]">
       <video ref={videoRef} autoPlay playsInline muted className="hidden" />
+      <canvas ref={analysisCanvasRef} className="hidden" />
       <canvas ref={canvasRef} className="h-full w-full object-cover" />
       <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(15,23,42,0.05),_rgba(15,23,42,0.55))]" />
-      {metrics.status === 'live' ? (
+      {metrics.status === 'live' || metrics.status === 'captured' ? (
         <div className="feed-scan absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-fuchsia-400/35 to-transparent" />
       ) : null}
-      <div className="absolute left-6 right-6 top-6 flex items-center justify-between rounded-md bg-slate-950/70 px-4 py-3 text-sm font-medium text-white backdrop-blur">
+      <div className="absolute left-4 right-4 top-4 flex items-center justify-between rounded-md bg-slate-950/70 px-4 py-3 text-sm font-medium text-white backdrop-blur">
         <span className="inline-flex items-center gap-2">
           <Camera className="h-4 w-4 text-[#ffc42d]" />
           Webcam + Human
@@ -247,7 +420,7 @@ export default function HumanWebcamFeed({
           className={`inline-flex items-center gap-2 ${
             metrics.status === 'error'
               ? 'text-rose-300'
-              : metrics.status === 'live'
+              : metrics.status === 'live' || metrics.status === 'captured'
                 ? 'text-emerald-300'
                 : 'text-slate-300'
           }`}
@@ -256,20 +429,20 @@ export default function HumanWebcamFeed({
             className={`h-2.5 w-2.5 rounded-full ${
               metrics.status === 'error'
                 ? 'bg-rose-400'
-                : metrics.status === 'live'
+                : metrics.status === 'live' || metrics.status === 'captured'
                   ? 'bg-emerald-400'
                   : 'bg-slate-400'
             }`}
           />
-          {metrics.status}
+          {analysisState === 'processing' ? 'processing' : metrics.status}
         </span>
       </div>
-      <div className="absolute bottom-6 left-6 right-6 rounded-md bg-slate-950/70 p-5 text-white backdrop-blur">
+      <div className="absolute bottom-4 left-4 right-4 rounded-md bg-slate-950/72 p-4 text-white backdrop-blur">
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
           <Activity className="h-4 w-4 text-[#ffc42d]" />
-          Detector status
+          Captured Retail Signals
         </div>
-        <p className="mt-3 text-sm leading-6 text-slate-300">{metrics.message}</p>
+        <p className="mt-3 text-sm leading-6 text-slate-300">{displayMessage}</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div className="rounded-md bg-white/8 px-4 py-3">
             <p className="text-xs uppercase tracking-[0.18em] text-slate-300/75">Face Mesh</p>
@@ -293,7 +466,7 @@ export default function HumanWebcamFeed({
       </div>
       {metrics.status === 'loading' ? (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-950/45 text-sm font-medium text-white backdrop-blur-sm">
-          Connecting to webcam and loading models...
+          Capturing retail profile from webcam...
         </div>
       ) : null}
     </div>
