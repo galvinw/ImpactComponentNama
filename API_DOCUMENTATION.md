@@ -25,6 +25,8 @@ PORT=3030
 
 The shopper profiling flow uses a generic OpenAI-compatible chat completions endpoint.
 
+For adapter-level maintenance details, including how to change the request body, response parsing, or provider assumptions, see [docs/LLM_ENDPOINT_MAINTENANCE.md](/Users/galvinwidjaja/code/cursor/ImpactComponentNama/docs/LLM_ENDPOINT_MAINTENANCE.md).
+
 Required variables:
 
 ```bash

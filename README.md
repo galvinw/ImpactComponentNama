@@ -107,6 +107,8 @@ If the endpoint returns invalid JSON or an incompatible schema, the capture is h
 
 Full request and response examples are in [API_DOCUMENTATION.md](/Users/galvinwidjaja/code/cursor/ImpactComponentNama/API_DOCUMENTATION.md).
 
+For endpoint maintenance, provider swaps, and request/response adapter changes, use [docs/LLM_ENDPOINT_MAINTENANCE.md](/Users/galvinwidjaja/code/cursor/ImpactComponentNama/docs/LLM_ENDPOINT_MAINTENANCE.md).
+
 ## Verification
 
 ```bash

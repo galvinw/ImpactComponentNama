@@ -13,6 +13,9 @@ const attributeDescriptions = {
   wellness: 'preference for lighter, healthier-feeling options',
 };
 
+// Providers vary on whether they return content as a plain string or as
+// multimodal content blocks. Keep the extraction logic isolated here so
+// endpoint-specific response differences can be adapted in one place.
 function extractTextContent(content) {
   if (typeof content === 'string') {
     return content;
@@ -37,6 +40,8 @@ function extractTextContent(content) {
   return '';
 }
 
+// Some models still wrap JSON in markdown fences even when explicitly told not to.
+// This normalizer keeps downstream validation strict while tolerating that output.
 function extractJsonPayload(text) {
   const normalized = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/, '');
   const firstBraceIndex = normalized.indexOf('{');
@@ -49,6 +54,9 @@ function extractJsonPayload(text) {
   return JSON.parse(normalized.slice(firstBraceIndex, lastBraceIndex + 1));
 }
 
+// The recommendation engine expects a full 10-dimensional vector.
+// Any provider-specific response shape should be converted into this exact schema
+// before returning from this module.
 function validateStats(stats) {
   if (!stats || typeof stats !== 'object') {
     throw new Error('LLM response missing stats object.');
@@ -109,6 +117,9 @@ ${JSON.stringify(captureMetadata, null, 2)}
 
 Session id: ${personSessionId}`;
 
+  // This adapter currently targets OpenAI-compatible chat completions APIs.
+  // If a future provider requires a different request shape, update the
+  // request body and the payload parsing below together.
   const headers = {
     'Content-Type': 'application/json',
   };
@@ -149,6 +160,8 @@ Session id: ${personSessionId}`;
   }
 
   const payload = await response.json();
+  // OpenAI-compatible servers return choices[0].message.content. If a provider
+  // uses a different envelope, map it here rather than changing the rest of the app.
   const content = payload?.choices?.[0]?.message?.content;
   const parsed = extractJsonPayload(extractTextContent(content));
   const stats = validateStats(parsed.stats);
