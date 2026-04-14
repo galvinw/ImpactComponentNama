@@ -1,172 +1,358 @@
 # API Documentation
 
-This project uses two separate servers:
+This project runs a local API server on `http://127.0.0.1:3030`.
 
-1. **Local Server (localhost:3030)** - Handles data storage and management (analysis data and timestamps)
-2. **External Processing Server (localhost:3005)** - Handles image processing and analysis
+The API has three responsibilities:
+- hold canonical product state on the server
+- accept one shopper capture per stable person session
+- call a configurable LLM endpoint to generate the 10 retail variables and shopper summary
 
-## Architecture Overview
-
-When the "Capture Image" button is pressed:
-1. The camera saves its image locally
-2. The image is POSTed to the external server at `http://localhost:3005/images`
-3. The system waits up to 10 seconds for the external server response
-4. If after 10 seconds any fields are missing from the response, stock values are used for those specific fields only
-5. The local server (localhost:3030) does NOT process images - it only stores data
-
-## Starting the Local Server
+## Server Startup
 
 ```bash
+nvm use
+npm install
 npm run server
 ```
 
-The local server runs on port 3030 by default and provides endpoints for data storage.
+Default port:
 
-## API Endpoints
+```bash
+PORT=3030
+```
 
-### 1. Update Analysis Data
+## LLM Endpoint Configuration
 
-**Endpoint:** `POST http://localhost:3030/api/update-analysis`
+The shopper profiling flow uses a generic OpenAI-compatible chat completions endpoint.
 
-**Description:** Create or update analysis data.
+Required variables:
 
-**Request Body:**
+```bash
+export LLM_ENDPOINT="http://127.0.0.1:1234/v1/chat/completions"
+export LLM_MODEL="your-vision-model"
+```
+
+Optional:
+
+```bash
+export LLM_API_KEY="optional"
+```
+
+Behavior:
+- `LLM_ENDPOINT` is the preferred variable.
+- `LLM_API_URL` is accepted as a legacy fallback.
+- The server only sends the `Authorization` header if `LLM_API_KEY` is set.
+- The model must support image input because `/api/person-session` sends the accepted still capture as an OpenAI-style `image_url`.
+
+Example local setup with LM Studio:
+
+```bash
+export LLM_ENDPOINT="http://127.0.0.1:1234/v1/chat/completions"
+export LLM_MODEL="qwen2.5-vl-7b-instruct"
+npm run server
+```
+
+If the LLM returns invalid JSON or omits any required stat key, the capture stays unaccepted and the API returns an error.
+
+## Health Check
+
+### `GET /health`
+
+Response:
+
 ```json
 {
-  "environment": "Indoor Office",
-  "description": "Multiple people working at desks with computers",
-  "number_of_people": 5,
-  "threats": null,
-  "is_anomaly": false,
-  "anomaly_reason": null,
-  "analysis_id": "optional-id-for-update"
+  "status": "ok",
+  "message": "API server is running"
 }
 ```
 
-**Response:**
+## Product State
+
+Products are stored in `server/data/products.json` after first startup.
+
+Each product contains:
+- immutable startup values in `defaultStats`
+- current mutable values in `stats`
+
+These current values are what recommendation ranking uses.
+
+### `GET /api/products`
+
+Returns the full current catalog.
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "bottled-water",
+      "name": "Bottled Water",
+      "price": 10,
+      "image": "https://...",
+      "stats": {
+        "hydration": 10,
+        "energy": 1,
+        "sweetness": 1,
+        "protein": 1,
+        "comfort": 6,
+        "focus": 5,
+        "urgency": 9,
+        "temperature": 10,
+        "indulgence": 2,
+        "wellness": 10
+      },
+      "defaultStats": {
+        "hydration": 10,
+        "energy": 1,
+        "sweetness": 1,
+        "protein": 1,
+        "comfort": 6,
+        "focus": 5,
+        "urgency": 9,
+        "temperature": 10,
+        "indulgence": 2,
+        "wellness": 10
+      }
+    }
+  ]
+}
+```
+
+### `POST /api/products/reset`
+
+Resets all products back to their startup `defaultStats`.
+
+Response:
+
 ```json
 {
   "success": true,
   "data": {
-    "id": "1707234567890",
-    "environment": "Indoor Office",
-    "description": "Multiple people working at desks with computers",
-    "number_of_people": 5,
-    "threats": null,
-    "is_anomaly": false,
-    "anomaly_reason": null,
-    "created_at": "2024-02-06T12:00:00.000Z",
-    "updated_at": "2024-02-06T12:00:00.000Z"
+    "products": [],
+    "session": null
   }
 }
 ```
 
-### 2. Record Timestamp
+If an active shopper session exists, the API also recomputes the active recommendation and `topProductIds` for that session using the reset products.
 
-**Endpoint:** `POST http://localhost:3030/api/record-timestamp`
+## Shopper Session Flow
 
-**Description:** Record processing timestamps for various events.
+The analytics page captures a still image only after:
+- a person remains present long enough to satisfy stable-lock rules
+- lighting, sharpness, size, and centering checks pass
 
-**Event IDs:**
-- `0` - Image Capture
-- `1` - Capture Analysis Complete
-- `2` - Recommendation Update
-- `3` - Total Time
+The accepted still capture is then sent to the API, which calls the configured LLM endpoint.
 
-**Request Body:**
-```json
-{
-  "id": 0,
-  "time": 1707234567890,
-  "analysis_id": "optional-analysis-id"
-}
-```
+### `GET /api/person-session/active`
 
-**Response:**
+Returns the most recently accepted shopper session, or `null`.
+
+Response:
+
 ```json
 {
   "success": true,
   "data": {
-    "id": "1707234567890",
-    "event_id": 0,
-    "timestamp_ms": 1707234567890,
-    "analysis_id": null,
-    "created_at": "2024-02-06T12:00:00.000Z"
+    "id": "person-1712784000000",
+    "label": "Visitor 4A2C",
+    "captureImage": "data:image/jpeg;base64,...",
+    "stats": {
+      "hydration": 8.2,
+      "energy": 5.4,
+      "sweetness": 4.7,
+      "protein": 2.1,
+      "comfort": 6.5,
+      "focus": 5.8,
+      "urgency": 6.9,
+      "temperature": 8.4,
+      "indulgence": 3.9,
+      "wellness": 7.2
+    },
+    "summary": "Visitor appears ready for something cold, steady, and uncomplicated.",
+    "activeProductId": "bottled-water",
+    "topProductIds": [
+      "bottled-water",
+      "powerade",
+      "ocha-green-tea",
+      "orange-juice",
+      "iced-coffee"
+    ],
+    "createdAt": "2026-04-10T18:20:00.000Z",
+    "updatedAt": "2026-04-10T18:20:00.000Z"
   }
 }
 ```
 
-### 3. Capture and Process Images (External Server)
+### `POST /api/person-session`
 
-**Endpoint:** `POST http://localhost:3005/images`
+Creates or replaces the active shopper session from a stable accepted still capture.
 
-**Description:** This endpoint is on a SEPARATE external processing server (not the local server). It receives the camera image as a base64-encoded JPEG data URL, processes it, and returns analysis results including timings and person/activity metadata.
+Request:
 
-**Request Body:**
 ```json
 {
-  "camera_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAA..."
+  "personSessionId": "person-1712784000000",
+  "captureImage": "data:image/jpeg;base64,...",
+  "captureMetadata": {
+    "brightness": 0.71,
+    "sharpness": 0.62,
+    "faceConfidence": 0.96,
+    "bodyConfidence": 0.98,
+    "faceAreaRatio": 0.14,
+    "personStableForMs": 1710
+  }
 }
 ```
 
-**Response:**
+Response:
+
 ```json
 {
-  "images_captured_time": 178,
-  "analysis_complete_time": 1234,
-  "processing_time": 567,
-  "total_time": 1979,
-  "environment": "Urban street",
-  "activity": "People walking normally in an orderly fashion. Some individuals are checking their phones...",
-  "people_count": 8,
-  "threats": "None detected",
-  "is_anomaly": false,
-  "anomaly_reason": "Normal activity for this environment with expected patterns and behavior",
-  "captured_at": "2024-02-06T12:00:00.000Z"
+  "success": true,
+  "data": {
+    "session": {
+      "id": "person-1712784000000",
+      "label": "Visitor 4A2C",
+      "captureImage": "data:image/jpeg;base64,...",
+      "stats": {
+        "hydration": 8.2,
+        "energy": 5.4,
+        "sweetness": 4.7,
+        "protein": 2.1,
+        "comfort": 6.5,
+        "focus": 5.8,
+        "urgency": 6.9,
+        "temperature": 8.4,
+        "indulgence": 3.9,
+        "wellness": 7.2
+      },
+      "summary": "Visitor appears ready for something cold, steady, and uncomplicated.",
+      "activeProductId": "bottled-water",
+      "topProductIds": [
+        "bottled-water",
+        "powerade",
+        "ocha-green-tea",
+        "orange-juice",
+        "iced-coffee"
+      ],
+      "createdAt": "2026-04-10T18:20:00.000Z",
+      "updatedAt": "2026-04-10T18:20:00.000Z"
+    },
+    "activeRecommendationId": "bottled-water",
+    "topProductIds": [
+      "bottled-water",
+      "powerade",
+      "ocha-green-tea",
+      "orange-juice",
+      "iced-coffee"
+    ]
+  }
 }
 ```
 
-**Response Fields:**
-- `images_captured_time` - Time taken to capture images (ms)
-- `analysis_complete_time` - Time taken to finish the upstream capture analysis phase (ms)
-- `processing_time` - Time taken for AI analysis (ms)
-- `total_time` - Total processing time (ms)
-- `environment` - Detected environment type
-- `activity` - Detailed activity description
-- `people_count` - Number of people detected
-- `threats` - Identified threats or "None detected"
-- `is_anomaly` - Boolean indicating if anomaly detected
-- `anomaly_reason` - Explanation of anomaly status
-- `captured_at` - Timestamp when processing completed
+Failure cases:
+- `400` if `personSessionId` or `captureImage` is missing
+- `502` if the LLM endpoint is unavailable or returns invalid output
+- `500` if no products are available for ranking
 
-**Behavior:**
-- The endpoint processes images and returns analysis results
-- Frontend waits up to **10 seconds** for response
-- **If response is not received within 10 seconds OR any fields are missing, stock values are used ONLY for the missing fields**
-- Each missing field is individually replaced with a generated stock value
-- The camera images are always saved locally regardless of the external server response
+## Recommendation Actions
 
-**Notes:**
-- Images are captured as base64-encoded data URLs from the live camera feeds
-- If camera access is unavailable, fallback stock images are used
-- AI analysis powered by Qwen 7b edge model (simulated)
-- The system gracefully handles partial responses by filling in only missing values
+Recommendation actions mutate server product state and keep the kiosk and analytics pages in sync.
 
-## GET Endpoints (for retrieving data)
+### `POST /api/recommendation-action`
 
-### Get All Analyses
-`GET http://localhost:3030/api/analyses`
+Request:
 
-### Get All Timestamps
-`GET http://localhost:3030/api/timestamps`
+```json
+{
+  "personSessionId": "person-1712784000000",
+  "actionType": "buy",
+  "productId": "bottled-water"
+}
+```
 
-### Health Check
-`GET http://localhost:3030/health`
+Allowed `actionType` values:
+- `buy`
+- `skip`
+- `select`
 
-## Data Storage
+Behavior:
+- `buy`: moves the selected product closer to the current shopper profile
+- `skip`: moves the selected product away from the current shopper profile
+- `select`: keeps product stats unchanged and only changes the active recommendation
 
-All data is stored in JSON files in the `server/data/` directory:
-- `analysis.json` - Analysis data
-- `timestamps.json` - Processing timestamps
+Response:
 
-The directory is created automatically when the server starts.
+```json
+{
+  "success": true,
+  "data": {
+    "products": [],
+    "session": {
+      "id": "person-1712784000000",
+      "label": "Visitor 4A2C",
+      "captureImage": "data:image/jpeg;base64,...",
+      "stats": {
+        "hydration": 8.2,
+        "energy": 5.4,
+        "sweetness": 4.7,
+        "protein": 2.1,
+        "comfort": 6.5,
+        "focus": 5.8,
+        "urgency": 6.9,
+        "temperature": 8.4,
+        "indulgence": 3.9,
+        "wellness": 7.2
+      },
+      "summary": "Visitor appears ready for something cold, steady, and uncomplicated.",
+      "activeProductId": "powerade",
+      "topProductIds": [
+        "powerade",
+        "bottled-water",
+        "ocha-green-tea",
+        "orange-juice",
+        "iced-coffee"
+      ],
+      "createdAt": "2026-04-10T18:20:00.000Z",
+      "updatedAt": "2026-04-10T18:21:04.000Z"
+    },
+    "activeRecommendationId": "powerade",
+    "topProductIds": [
+      "powerade",
+      "bottled-water",
+      "ocha-green-tea",
+      "orange-juice",
+      "iced-coffee"
+    ],
+    "interactionLogEntry": {
+      "id": "1712784064000-buy",
+      "time": "06:21:04 PM",
+      "action": "buy",
+      "recommended": "Bottled Water",
+      "notRecommended": "Snickers, Red Bull",
+      "stateUpdate": "hydration +0.12, temperature +0.10, urgency -0.08, wellness +0.07",
+      "matchDistance": "0.18"
+    }
+  }
+}
+```
+
+Failure cases:
+- `400` if required fields are missing or `actionType` is invalid
+- `404` if the active shopper session or requested product cannot be found
+- `500` if the next recommendation cannot be computed
+
+## Legacy Endpoints
+
+These endpoints still exist for older analysis flows:
+- `POST /api/update-analysis`
+- `GET /api/analyses`
+- `POST /api/record-timestamp`
+- `GET /api/timestamps`
+- `GET /api/camera-feeds`
+
+They are not part of the new shopper-session recommendation loop.

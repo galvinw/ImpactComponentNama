@@ -69,10 +69,10 @@ function validateStats(stats) {
 export async function generateRetailProfile({ captureImage, captureMetadata, personSessionId }) {
   const apiKey = process.env.LLM_API_KEY;
   const model = process.env.LLM_MODEL;
-  const apiUrl = process.env.LLM_API_URL || 'https://api.openai.com/v1/chat/completions';
+  const endpoint = process.env.LLM_ENDPOINT || process.env.LLM_API_URL;
 
-  if (!apiKey || !model) {
-    throw new Error('Missing LLM_API_KEY or LLM_MODEL for person profiling.');
+  if (!endpoint || !model) {
+    throw new Error('Missing LLM_ENDPOINT or LLM_MODEL for person profiling.');
   }
 
   const prompt = `Analyze this single retail kiosk shopper image and return a strict JSON object.
@@ -109,12 +109,17 @@ ${JSON.stringify(captureMetadata, null, 2)}
 
 Session id: ${personSessionId}`;
 
-  const response = await fetch(apiUrl, {
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  const response = await fetch(endpoint, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers,
     body: JSON.stringify({
       model,
       messages: [
@@ -137,7 +142,10 @@ Session id: ${personSessionId}`;
   });
 
   if (!response.ok) {
-    throw new Error(`LLM request failed with status ${response.status}.`);
+    const responseText = await response.text();
+    throw new Error(
+      `LLM request failed with status ${response.status}${responseText ? `: ${responseText}` : '.'}`
+    );
   }
 
   const payload = await response.json();
